@@ -1,6 +1,7 @@
 # Node.js
 backend/node_modules/
 backend/.env
+backend/.env.local
 
 # React Native
 frontend/node_modules/
@@ -15,4 +16,5 @@ __pycache__/
 *.log
 .env
 .DS_Store
-
+dist/
+coverage/
