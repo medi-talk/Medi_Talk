@@ -1,15 +1,14 @@
-version: "3.8"
-
 services:
   backend:
     build: ./backend
     container_name: medi-backend
     ports:
-      - "3000:3000"
+      - "50000:3000"
     env_file:
       - ./backend/.env
     depends_on:
       - db
+    restart: always
     networks:
       - medi-net
 
@@ -22,9 +21,10 @@ services:
       MYSQL_USER: mediuser
       MYSQL_PASSWORD: medi1234
     ports:
-      - "3306:3306"
+      - "50001:3306"
     volumes:
       - mysql-data:/var/lib/mysql
+    restart: always
     networks:
       - medi-net
 

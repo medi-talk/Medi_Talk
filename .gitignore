@@ -12,8 +12,11 @@ frontend/.env
 # Python
 __pycache__/
 
-# ETC
+# LOG
+logs/
 *.log
+
+# ETC
 .env
 .DS_Store
 dist/

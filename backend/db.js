@@ -1,19 +1,22 @@
 const mysql = require('mysql2');
+const logger = require('./utils/logger');
 
-const connection = mysql.createConnection({
-  host: process.env.DB_HOST,
+const pool = mysql.createPool({
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 3306,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
 });
 
-connection.connect((err) => {
+pool.getConnection((err, connection) => {
   if (err) {
-    console.error('❌ DB 연결 실패:', err);
+    logger.error(`❌ DB 연결 실패: ${err}`);
   } else {
-    console.log('✅ MySQL 연결 성공!');
+    logger.info('✅ MySQL 연결 성공!');
+    connection.release();
   }
 });
 
-module.exports = connection;
+module.exports = pool;
 
