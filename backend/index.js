@@ -1,26 +1,28 @@
+// 환경 설정
 require('dotenv').config();
+
+// 모듈 임포트
 const express = require('express');
 const morgan = require('morgan');
 const logger = require('./utils/logger');
-require('./db'); // DB 연결 트리거
+require('./db'); // ✅ DB 연결 (즉시 실행)
 
+// 앱 초기화
 const app = express();
 
-// 내부 포트 (Express listen용)
-const port = process.env.PORT || 3000;
-// 외부 포트 (사용자에게 보여줄 주소용, 없으면 내부 포트로 fallback)
-const externalPort = process.env.EXTERNAL_PORT || port;
+// 포트 설정
+const port = process.env.PORT || 3000; // 내부 포트 (Express listen용)
+const externalPort = process.env.EXTERNAL_PORT || port; // 외부에 안내할 포트
 
-app.use(express.json());
+// 미들웨어 설정
+app.use(express.json());      // JSON 파싱
+app.use(morgan('dev'));       // 요청 로그 (개발용)
 
-// 개발 중에는 콘솔에 로그 출력
-app.use(morgan('dev'));
+// 라우터 설정
+app.use('/api/ping', require('./routes/ping')); // Ping 테스트
+app.use('/api', require('./routes/api'));       // 기타 API
 
-// Ping 테스트 라우터
-const pingRouter = require('./routes/ping');
-app.use('/api/ping', pingRouter);
-
-// 서버 실행
+// 서버 시작
 app.listen(port, () => {
   logger.info(`✅ Server running at http://localhost:${externalPort}`);
 });
