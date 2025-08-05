@@ -1,0 +1,25 @@
+Git Hub
+
+git add .
+git commit -m "커밋 메시지"
+git push
+
+git pull
+
+
+Docker
+
+docker compose up --build
+
+#docker poweroff
+docker compose down
+
+#docker log
+docker compose logs -f medi-backend
+
+#docker remove(do up --build after this command)
+docker compose down -v
+
+#docker present status
+docker compose ps
+

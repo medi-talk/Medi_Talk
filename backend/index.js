@@ -3,7 +3,6 @@ require('dotenv').config();
 
 // 모듈 임포트
 const express = require('express');
-const morgan = require('morgan');
 const logger = require('./utils/logger');
 require('./db'); // ✅ DB 연결 (즉시 실행)
 
@@ -16,7 +15,12 @@ const externalPort = process.env.EXTERNAL_PORT || port; // 외부에 안내할 �
 
 // 미들웨어 설정
 app.use(express.json());      // JSON 파싱
-app.use(morgan('dev'));       // 요청 로그 (개발용)
+
+// HTTP 요청 로깅
+app.use((req, res, next) => {
+  logger.info(`[HTTP] ${req.method} ${req.originalUrl}`);
+  next();
+});
 
 // 라우터 설정
 app.use('/api/ping', require('./routes/ping')); // Ping 테스트

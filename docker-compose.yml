@@ -11,6 +11,8 @@ services:
     restart: always
     networks:
       - medi-net
+    volumes:
+      - ./backend/logs:/app/logs
 
   db:
     image: mysql:8.0.34
