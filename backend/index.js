@@ -25,6 +25,7 @@ app.use((req, res, next) => {
 // 라우터 설정
 app.use('/api/ping', require('./routes/ping')); // Ping 테스트
 app.use('/api', require('./routes/api'));       // 기타 API
+app.use('/health', require('./routes/health')); // health api
 
 // 서버 시작
 app.listen(port, () => {

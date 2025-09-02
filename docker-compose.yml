@@ -5,14 +5,20 @@ services:
     ports:
       - "${EXTERNAL_PORT}:${PORT}"
     env_file:
-      - ./backend/.env
+      - ./.env
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     restart: always
     networks:
       - medi-net
     volumes:
       - ./backend/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
   db:
     image: mysql:8.0.34
@@ -29,6 +35,11 @@ services:
     restart: always
     networks:
       - medi-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p1234"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
 networks:
   medi-net:
