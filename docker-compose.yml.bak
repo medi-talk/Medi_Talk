@@ -14,6 +14,11 @@ services:
     restart: always
     networks:
       - medi-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p1234"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
 
   opencv:
     build: ./opencv
@@ -24,7 +29,8 @@ services:
     networks:
       - medi-net
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -35,6 +41,12 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    # ✅ 헬스체크 추가
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: ./backend
@@ -44,13 +56,20 @@ services:
     env_file:
       - ./.env
     depends_on:
-      - db
-      - opencv
+      db:
+        condition: service_healthy
+      opencv:
+        condition: service_healthy   # OpenCV 준비되면 시작
     restart: always
     networks:
       - medi-net
     volumes:
       - ./backend/logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries : 3
 
 networks:
   medi-net:
