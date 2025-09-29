@@ -1,0 +1,53 @@
+import os
+import cv2
+import numpy as np
+import pytesseract
+import torch
+import easyocr
+from PIL import Image
+from preprocess import preprocess_for_easyocr
+
+_EASYOCR_READER_CACHE = {}
+
+def _map_langs_for_easyocr(lang: str):
+    lang = (lang or "").lower()
+    has_kor = "kor" in lang or "ko" in lang
+    has_eng = "eng" in lang or "en" in lang
+    if has_kor and has_eng:
+        return ["ko", "en"]
+    if has_kor:
+        return ["ko"]
+    return ["en"]
+
+def _get_easyocr_reader(lang: str):
+    langs = _map_langs_for_easyocr(lang)
+    key = ",".join(langs) + ("|gpu" if torch.cuda.is_available() else "|cpu")
+    if key not in _EASYOCR_READER_CACHE:
+        _EASYOCR_READER_CACHE[key] = easyocr.Reader(langs, gpu=torch.cuda.is_available())
+    return _EASYOCR_READER_CACHE[key]
+
+def run_ocr_tesseract(pil: Image.Image, lang: str) -> str:
+    os.environ.setdefault("TESSDATA_PREFIX", "/usr/share/tesseract-ocr/5/tessdata")
+    img_bgr = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+    config = "--oem 3 --psm 6 -c preserve_interword_spaces=1 -c user_defined_dpi=300"
+    return pytesseract.image_to_string(img_bgr, lang=lang, config=config)
+
+def run_ocr_easyocr_text_only(pil: Image.Image, lang: str) -> str:
+    img = np.array(pil)
+    h, w = img.shape[:2]
+    if max(h, w) < 1600:
+        img = cv2.resize(img, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    img = preprocess_for_easyocr(img)
+    reader = _get_easyocr_reader(lang)
+    lines = reader.readtext(img, detail=0, paragraph=True)
+    return "\n".join([ln.strip() for ln in lines if ln.strip()])
+
+def run_ocr_easyocr_with_boxes(pil: Image.Image, lang: str):
+    img = np.array(pil)
+    h, w = img.shape[:2]
+    if max(h, w) < 1600:
+        img = cv2.resize(img, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    img = preprocess_for_easyocr(img)
+    reader = _get_easyocr_reader(lang)
+    return reader.readtext(img, detail=1, paragraph=False)
+

@@ -1,0 +1,56 @@
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+from PIL import Image
+import io
+
+from ocr_utils import run_ocr_tesseract, run_ocr_easyocr_text_only
+from preprocess import postprocess_text
+from parse_utils import parse_nutrition_lines, parse_nutrition_easyocr
+
+app = FastAPI(title="Medi_Talk OCR API")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.post("/ocr")
+async def ocr_image(file: UploadFile = File(...), lang: str = "kor+eng", engine: str = "easyocr"):
+    try:
+        data = await file.read()
+        pil = Image.open(io.BytesIO(data)).convert("RGB")
+
+        if engine.lower() == "tesseract":
+            raw_text = run_ocr_tesseract(pil, lang=lang)
+            engine_used = "tesseract"
+        else:
+            raw_text = run_ocr_easyocr_text_only(pil, lang=lang)
+            engine_used = "easyocr"
+
+        text_pp = postprocess_text(raw_text)
+        return JSONResponse({"engine": engine_used, "lang": lang, "text": text_pp})
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/ocr/nutrition")
+async def ocr_nutrition(file: UploadFile = File(...), lang: str = "kor+eng", engine: str = "easyocr"):
+    try:
+        data = await file.read()
+        pil = Image.open(io.BytesIO(data)).convert("RGB")
+
+        if engine.lower() == "tesseract":
+            raw_text = run_ocr_tesseract(pil, lang=lang)
+            rows = parse_nutrition_lines(postprocess_text(raw_text))
+            engine_used = "tesseract"
+        else:
+            raw_text, rows = parse_nutrition_easyocr(pil, lang=lang)
+            engine_used = "easyocr"
+
+        return JSONResponse({
+            "engine": engine_used,
+            "lang": lang,
+            "raw_text": raw_text,
+            "rows": rows
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+

@@ -1,0 +1,143 @@
+import re
+import cv2
+import numpy as np
+
+# =========================================================
+# 이미지 전처리 (EasyOCR 친화: 데스큐 + 대비 강화 + 샤프닝)
+# =========================================================
+def preprocess_for_easyocr(img_rgb: np.ndarray) -> np.ndarray:
+    """
+    EasyOCR 인식률 향상을 위한 전처리:
+      1) 기울기(스큐) 보정
+      2) L 채널 CLAHE로 대비 강화
+      3) 약한 샤프닝 (Unsharp-like)
+    입력/출력: RGB ndarray
+    """
+    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+
+    # 스큐 추정
+    edges = cv2.Canny(gray, 50, 150)
+    edges = cv2.dilate(edges, np.ones((3, 3), np.uint8), iterations=1)
+
+    angle_deg = 0.0
+    lines = cv2.HoughLinesP(
+        edges, 1, np.pi / 180, threshold=120,
+        minLineLength=max(30, int(0.15 * min(gray.shape))),
+        maxLineGap=10
+    )
+    if lines is not None and len(lines) > 0:
+        angles = []
+        for x1, y1, x2, y2 in lines.reshape(-1, 4):
+            dx = x2 - x1
+            if dx == 0:
+                continue
+            ang = np.degrees(np.arctan2(y2 - y1, dx))
+            if -25 <= ang <= 25:
+                angles.append(ang)
+        if angles:
+            angle_deg = float(np.median(angles))
+
+    if abs(angle_deg) > 0.2:
+        h, w = gray.shape
+        M = cv2.getRotationMatrix2D((w / 2, h / 2), angle_deg, 1.0)
+        img_rgb = cv2.warpAffine(
+            img_rgb, M, (w, h),
+            flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE
+        )
+
+    # 대비 강화 (LAB의 L 채널)
+    lab = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LAB)
+    L, A, B = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    L = clahe.apply(L)
+    lab = cv2.merge([L, A, B])
+    img_rgb = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+    # 약한 샤프닝
+    blur = cv2.GaussianBlur(img_rgb, (0, 0), sigmaX=1.0)
+    img_rgb = cv2.addWeighted(img_rgb, 1.25, blur, -0.25, 0)
+
+    return img_rgb
+
+
+# =========================================================
+# 텍스트 전처리 (일반 클린업/숫자/단위 보정)
+# =========================================================
+def clean_text_generic(text: str) -> str:
+    """
+    OCR 결과물에서 불필요 기호 제거 + 공백 정리.
+    값 왜곡이 일어나지 않는 안전한 수준의 정리만 수행.
+    """
+    out_lines = []
+    for line in text.splitlines():
+        # 시각적 구분자 성격의 기호들 제거
+        line = re.sub(r"[|;+:{}!]", " ", line)
+        # 공백 정리
+        line = re.sub(r"\s+", " ", line).strip()
+        if line:
+            out_lines.append(line)
+    return "\n".join(out_lines)
+
+
+def normalize_numbers(text: str) -> str:
+    """
+    숫자 토큰 내에서 흔한 오인식을 보정:
+      - O/D/o → 0
+      - i/l/I → 1
+      - Z → 7
+      - S → 5
+      - B → 8
+    ※ 숫자(0-9)를 포함한 토큰에만 적용 (문자열 전체 왜곡 방지)
+    """
+    trans = str.maketrans({
+        "O": "0", "o": "0", "D": "0",
+        "i": "1", "l": "1", "I": "1",
+        "Z": "7", "S": "5", "B": "8",
+    })
+
+    def _fix_tok(tok: str) -> str:
+        return tok.translate(trans) if re.search(r"\d", tok) else tok
+
+    fixed_lines = []
+    for line in text.splitlines():
+        toks = line.split()
+        fixed_lines.append(" ".join(_fix_tok(t) for t in toks))
+    return "\n".join(fixed_lines)
+
+
+def normalize_units(text: str) -> str:
+    """
+    단위 표기에 대한 최소 보정:
+      - 'm 9', 'm9', 'm q' → 'mg' (띄어쓰기/오인식 보정)
+      - µ/μ 를 u 로 통일 (ug로 표준화 목적)
+      - 전각 퍼센트(％) → % 로 통일
+      - 흔한 '96' → '%' 패턴 보정은 nutrition 전용에서 처리 (여기선 건드리지 않음)
+    """
+    # mg 오인식 (영문 소문자/대문자 구분 X)
+    text = re.sub(r"(?i)\bm\s*9\b", "mg", text)  # m9, m 9
+    text = re.sub(r"(?i)\bm\s*q\b", "mg", text)  # m q
+
+    # 마이크로 기호 통일
+    text = text.replace("µ", "u").replace("μ", "u")
+
+    # 전각 % → %
+    text = text.replace("％", "%")
+
+    return text
+
+
+# =========================================================
+# nutrition 전/후처리에 공통으로 쓰는 최종 조립
+# =========================================================
+def postprocess_text(text: str) -> str:
+    """
+    최종 텍스트 후처리 파이프라인:
+      1) 일반 클린업 (불필요 기호/공백)
+      2) 숫자 오인식 보정
+      3) 단위 표기 보정
+    ※ 영양성분 특화 보정(예: '96' → '%')은 parse_utils.normalize_for_nutrition()에서 처리
+    """
+    text = clean_text_generic(text)
+    text = normalize_numbers(text)
+    text = normalize_units(text)
+    return text

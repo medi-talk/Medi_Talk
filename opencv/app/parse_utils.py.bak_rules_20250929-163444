@@ -1,0 +1,215 @@
+# app/parse_utils.py
+import re
+import difflib
+from typing import List, Dict, Optional, Tuple
+
+from ocr_utils import run_ocr_easyocr_with_boxes
+from preprocess import postprocess_text
+from nutrients_dict import NUTRIENT_SYNONYMS
+from units_dict import UNIT_REGEX, normalize_unit, is_unit
+from constants import NUM_PATTERN, PERCENT_PATTERN
+
+# 흔한 잘못 읽힘 교정 맵
+COMMON_MISREAD = {
+    "갈숨": "칼슘",
+    "나트룹": "나트륨",
+    "나트룸": "나트륨",
+    "콜레스레돌": "콜레스테롤",
+    "식이섭유": "식이섬유",
+    "업산": "엽산",
+    # 필요시 추가 보정 패턴
+}
+
+# -----------------------------
+# 정규화/매칭 유틸
+# -----------------------------
+def _token_has_digit(tok: str) -> bool:
+    return bool(re.search(r"\d", tok))
+
+def normalize_for_nutrition(text: str) -> str:
+    """
+    안전한 정규화:
+    - 전각 % → %
+    - '96' → '%' (예: 2696 → 26%)
+    - 숫자 토큰에 한해 O/D→0, i/l/I→1, Z→7, S→5, B→8 교정
+    """
+    text = text.replace("％", "%")
+    text = re.sub(rf"({NUM_PATTERN})\s*96\b", r"\1%", text)
+
+    trans = str.maketrans({
+        "O": "0", "o": "0", "D": "0",
+        "i": "1", "l": "1", "I": "1",
+        "Z": "7", "S": "5", "B": "8",
+    })
+
+    fixed_lines = []
+    for line in text.splitlines():
+        toks = line.split()
+        fixed = []
+        for t in toks:
+            if _token_has_digit(t):
+                fixed.append(t.translate(trans))
+            else:
+                fixed.append(t)
+        fixed_lines.append(" ".join(fixed))
+    return "\n".join(fixed_lines)
+
+def _cleanup_name_fragment(s: str) -> str:
+    """이름 후보 문자열에서 숫자/단위/퍼센트 잔여 제거 후 트림"""
+    s = re.sub(PERCENT_PATTERN, " ", s, flags=re.I)
+    s = re.sub(rf"\b({NUM_PATTERN})\s*({UNIT_REGEX})\b", " ", s, flags=re.I)
+    s = re.sub(rf"\b{NUM_PATTERN}\b", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+def match_canonical_name(fragment: str) -> Optional[str]:
+    """사전 기반 매칭 (정규식, 국/영/약어/변형 포함)"""
+    for canon, syns in NUTRIENT_SYNONYMS.items():
+        for s in syns:
+            if re.search(rf"\b{s}\b", fragment, re.IGNORECASE):
+                return canon
+    return None
+
+def fuzzy_match_name(fragment: str) -> Optional[str]:
+    """퍼지 매칭: 흔한 오인식 교정 → 사전 매칭 → 유사도 매칭"""
+    if fragment in COMMON_MISREAD:
+        fragment = COMMON_MISREAD[fragment]
+
+    # 이름 조각만 남기기
+    frag = _cleanup_name_fragment(fragment)
+    if not frag:
+        return None
+
+    canon = match_canonical_name(frag)
+    if canon:
+        return canon
+
+    # 모든 별칭 평탄화
+    all_synonyms = [syn for syns in NUTRIENT_SYNONYMS.values() for syn in syns]
+    close = difflib.get_close_matches(frag, all_synonyms, n=1, cutoff=0.72)
+    if close:
+        return match_canonical_name(close[0])
+    return None
+
+# -----------------------------
+# 라인 기반 파서 (Tesseract 등)
+# -----------------------------
+def parse_nutrition_lines(text: str) -> List[Dict[str, Optional[str]]]:
+    """
+    텍스트 라인에서 (영양성분/함량/기준치) 추출
+    - 기준치/함량이 없어도 버리지 않음 (None)
+    """
+    text = normalize_for_nutrition(text)
+
+    rows: List[Dict[str, Optional[str]]] = []
+
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+
+        # 기준치(%)
+        percent_str = None
+        pm = re.search(PERCENT_PATTERN, line, flags=re.I)
+        if pm:
+            percent_str = f"{pm.group(1)}%"
+            line = re.sub(PERCENT_PATTERN, " ", line, flags=re.I)
+
+        # 함량(숫자+단위)
+        amount_str = None
+        m = re.search(rf"\b({NUM_PATTERN})\s*({UNIT_REGEX})\b", line, flags=re.I)
+        if m:
+            val = m.group(1).replace(",", "")
+            unit = normalize_unit(m.group(2))
+            amount_str = f"{val} {unit}"
+            line = (line[:m.start()] + " " + line[m.end():]).strip()
+
+        # 이름 후보 정리 → 매칭
+        name_frag = _cleanup_name_fragment(line)
+        if not name_frag:
+            continue
+        canon = fuzzy_match_name(name_frag) or name_frag
+
+        rows.append({"영양성분": canon, "함량": amount_str, "기준치": percent_str})
+
+    return rows
+
+# -----------------------------
+# EasyOCR(박스) 기반 파서
+# -----------------------------
+def _split_amount_unit(tok: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    '10mg' 같이 붙은 토큰을 수치/단위로 분리
+    """
+    m = re.match(rf'^({NUM_PATTERN})\s*({UNIT_REGEX})$', tok, flags=re.I)
+    if m:
+        return m.group(1), normalize_unit(m.group(2))
+    return None, None
+
+def parse_nutrition_easyocr(pil, lang: str):
+    """
+    EasyOCR 결과(detail=1)로부터 (영양성분/함량/기준치) 구성
+    - 이름 토큰 발견 후 근접 6~7토큰 범위에서 수치/단위/퍼센트 탐색
+    """
+    results = run_ocr_easyocr_with_boxes(pil, lang)
+    tokens = [(t.strip(), c) for (_b, t, c) in results if t and c >= 0.30]
+
+    # 서버 후처리 적용본(검증용 테キ스트)
+    text_pp = postprocess_text(" ".join([t for t, _ in tokens]))
+    text_pp = normalize_for_nutrition(text_pp)
+
+    rows: List[Dict[str, Optional[str]]] = []
+
+    # 토큰도 숫자/단위 인식 실패를 줄이기 위해 미리 일부 정규화
+    norm_tokens: List[Tuple[str, float]] = []
+    for t, c in tokens:
+        # 숫자 토큰의 흔한 오인식만 치환
+        if _token_has_digit(t):
+            t = normalize_for_nutrition(t)
+        norm_tokens.append((t, c))
+
+    i = 0
+    N = len(norm_tokens)
+    while i < N:
+        name_tok, _ = norm_tokens[i]
+        canon = fuzzy_match_name(name_tok)
+
+        if canon:
+            amount_str, percent_str = None, None
+            j = i + 1
+            max_jump = min(N, i + 7)
+            while j < max_jump:
+                tt, _c = norm_tokens[j]
+
+                # 퍼센트 값 (예: 26%)
+                if re.match(rf"^{NUM_PATTERN}%$", tt):
+                    percent_str = tt
+                    j += 1
+                    continue
+
+                # 1) 붙어서 온 경우: "10mg"
+                av, au = _split_amount_unit(tt)
+                if av and au and amount_str is None:
+                    amount_str = f"{av} {au}"
+                    j += 1
+                    continue
+
+                # 2) 분리된 경우: "10" "mg"
+                if re.match(rf"^{NUM_PATTERN}$", tt) and amount_str is None:
+                    if j + 1 < N:
+                        nxt = norm_tokens[j + 1][0]
+                        if is_unit(nxt):
+                            amount_str = f"{tt} {normalize_unit(nxt)}"
+                            j += 2
+                            continue
+
+                j += 1
+
+            rows.append({"영양성분": canon, "함량": amount_str, "기준치": percent_str})
+            i = j
+            continue
+
+        i += 1
+
+    return text_pp, rows
+
