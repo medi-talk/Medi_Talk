@@ -1,0 +1,201 @@
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import JSONResponse
+from PIL import Image
+import numpy as np
+import cv2
+import pytesseract
+import io
+import os
+import torch
+import easyocr
+import math
+import re
+
+# EasyOCR 리더를 1회만 생성해서 재사용 (모델 재다운/재로드 방지)
+_EASYOCR_READER = None
+
+def _get_easyocr_reader(lang: str):
+    global _EASYOCR_READER
+    if _EASYOCR_READER is None:
+        # lang 파라미터에 kor/eng 혼용 시 ko+en으로 매핑
+        langs = ["ko","en"] if "kor" in lang else (["en"] if "eng" in lang else ["en"])
+        use_gpu = torch.cuda.is_available()
+        _EASYOCR_READER = easyocr.Reader(langs, gpu=use_gpu)
+    return _EASYOCR_READER
+
+def _map_langs_for_easyocr(lang: str):
+    # 'kor+eng' → ['ko','en'] 처럼 변환
+    if "kor" in lang and "eng" in lang:
+        return ["ko","en"]
+    if "kor" in lang:
+        return ["ko"]
+    return ["en"]
+
+def preprocess_for_ocr(pil_img):
+    # Pillow → OpenCV 변환
+    img = np.array(pil_img)
+    img = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+
+    # 해상도 확대 (작은 글자 방지)
+    h, w = img.shape[:2]
+    scale = 2.0 if max(h, w) < 1800 else 1.5
+    img = cv2.resize(img, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+
+    # 노이즈 제거
+    img = cv2.bilateralFilter(img, d=7, sigmaColor=75, sigmaSpace=75)
+
+    # 적응형 이진화
+    img = cv2.adaptiveThreshold(
+        img, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY, 35, 11
+    )
+
+    # 얇은 글씨 강조
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+    img = cv2.dilate(img, kernel, iterations=1)
+
+    return img
+
+def preprocess_for_easyocr(img_rgb: np.ndarray) -> np.ndarray:
+    """
+    목표: 텍스트 기울기 자동 보정 + 대비 강화 + 약한 샤프닝
+    입력/출력: RGB numpy 배열
+    """
+    # --- 1) 기울기(회전) 추정 ---
+    gray = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    edges = cv2.dilate(edges, np.ones((3,3), np.uint8), iterations=1)
+
+    angle_deg = 0.0
+    lines = cv2.HoughLinesP(edges, rho=1, theta=np.pi/180, threshold=120,
+                            minLineLength=max(30, int(0.15*min(gray.shape))),
+                            maxLineGap=10)
+    if lines is not None and len(lines) > 0:
+        angles = []
+        for x1,y1,x2,y2 in lines.reshape(-1,4):
+            dx, dy = (x2-x1), (y2-y1)
+            if dx == 0:
+                continue
+            ang = math.degrees(math.atan2(dy, dx))
+            if -25 <= ang <= 25:
+                angles.append(ang)
+        if angles:
+            angles.sort()
+            angle_deg = float(np.median(angles))
+
+    if abs(angle_deg) > 0.2:
+        h, w = gray.shape
+        M = cv2.getRotationMatrix2D((w/2, h/2), angle_deg, 1.0)
+        img_rgb = cv2.warpAffine(img_rgb, M, (w, h), flags=cv2.INTER_CUBIC, borderMode=cv2.BORDER_REPLICATE)
+
+    # --- 2) 대비 강화 (LAB의 L 채널 CLAHE) ---
+    lab = cv2.cvtColor(img_rgb, cv2.COLOR_RGB2LAB)
+    L, A, B = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+    L = clahe.apply(L)
+    lab = cv2.merge([L, A, B])
+    img_rgb = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+
+    # --- 3) 약한 샤프닝 (Unsharp mask) ---
+    blur = cv2.GaussianBlur(img_rgb, (0,0), sigmaX=1.0)
+    img_rgb = cv2.addWeighted(img_rgb, 1.25, blur, -0.25, 0)
+
+    return img_rgb
+
+# ------------------------
+# 후처리 유틸
+# ------------------------
+def clean_ocr_text(text: str) -> str:
+    lines = text.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        cleaned = re.sub(r"[|;+:{}!]", " ", line)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if cleaned:
+            cleaned_lines.append(cleaned)
+    return "\n".join(cleaned_lines)
+
+def normalize_ocr_units(text: str) -> str:
+    # 'm9', 'm q' → 'mg' 보정만 수행
+    norm_lines = []
+    for line in text.splitlines():
+        line = re.sub(r'(?i)\bm\s*9\b', 'mg', line)
+        line = re.sub(r'(?i)\bm\s*q\b', 'mg', line)
+        norm_lines.append(line)
+    return "\n".join(norm_lines)
+
+def postprocess_text(text: str) -> str:
+    text = clean_ocr_text(text)
+    text = normalize_ocr_units(text)
+    return text
+
+# ------------------------
+# FastAPI
+# ------------------------
+app = FastAPI(title="OpenCV API (edge detection demo)")
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+@app.post("/analyze/edges")
+async def analyze_edges(file: UploadFile = File(...), low: int = 100, high: int = 200):
+    try:
+        data = await file.read()
+        nparr = np.frombuffer(data, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            raise ValueError("Invalid image")
+        edges = cv2.Canny(img, low, high)
+        nonzero = int(np.count_nonzero(edges))
+        total = int(edges.size)
+        return JSONResponse({
+            "width": int(edges.shape[1]),
+            "height": int(edges.shape[0]),
+            "edge_pixels": nonzero,
+            "edge_ratio": round(nonzero / total, 6)
+        })
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/ocr")
+async def ocr_image(file: UploadFile = File(...), lang: str = "eng", engine: str = "tesseract"):
+    try:
+        os.environ.setdefault("TESSDATA_PREFIX", "/usr/share/tesseract-ocr/5/tessdata")
+
+        data = await file.read()
+        pil = Image.open(io.BytesIO(data)).convert("RGB")
+
+        if engine.lower() == "easyocr":
+            img_np = np.array(pil)
+            h, w = img_np.shape[:2]
+            if max(h, w) < 1600:
+                img_np = cv2.resize(img_np, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+
+            img_np = preprocess_for_easyocr(img_np)
+
+            langs = _map_langs_for_easyocr(lang)
+            reader = easyocr.Reader(langs, gpu=torch.cuda.is_available())
+
+            lines = reader.readtext(img_np, detail=0, paragraph=True)
+            text = "\n".join([ln.strip() for ln in lines if ln.strip()])
+
+            # ★ 후처리 적용
+            text = postprocess_text(text)
+
+            return JSONResponse({"engine": "easyocr", "lang": lang, "text": text})
+
+        else:
+            proc = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+
+            config = "--oem 3 --psm 6 -c preserve_interword_spaces=1 -c user_defined_dpi=300"
+            text = pytesseract.image_to_string(proc, lang=lang, config=config)
+
+            # ★ 후처리 적용
+            text = postprocess_text(text)
+
+            return JSONResponse({"engine": "tesseract", "lang": lang, "text": text})
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+

@@ -1,0 +1,67 @@
+import requests
+import os
+import urllib.parse
+import re
+
+IMAGE_PATH = os.path.join(os.path.dirname(__file__), "vitamin_kor_1.jpg")
+lang = "kor+eng"
+OCR_URL = f"http://localhost:8000/ocr/nutrition?lang={urllib.parse.quote_plus(lang)}&engine=easyocr"
+# ↑ kor+eng -> kor%2Beng 로 안전하게 인코딩
+
+def clean_ocr_text(text: str) -> str:
+    # 1) 라인별로 쪼개기
+    lines = text.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        # 2) 불필요한 기호 제거: | ; + : } { !
+        cleaned = re.sub(r"[|;+:{}!]", " ", line)
+        # 3) 공백 정리 (연속 공백 → 한 칸)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if cleaned:  # 빈 줄은 버리기
+            cleaned_lines.append(cleaned)
+    # 4) 다시 개행으로 합치기
+    return "\n".join(cleaned_lines)
+
+def normalize_ocr_units(text: str) -> str:
+    """
+    OCR 후처리:
+    - m9, m q → mg 교정만 적용
+    (강제 mg/g 치환은 제거해서 원본 숫자 보존)
+    """
+    norm_lines = []
+    for line in text.splitlines():
+        tokens = line.split()
+        fixed = []
+        for t in tokens:
+            # (C) 'm9', 'm q' → 'mg'
+            t = re.sub(r'(?i)\bm\s*9\b', 'mg', t)
+            t = re.sub(r'(?i)\bm\s*q\b', 'mg', t)
+
+            fixed.append(t)
+        norm_lines.append(" ".join(fixed))
+    return "\n".join(norm_lines)
+
+def run_ocr():
+    if not os.path.exists(IMAGE_PATH):
+        print(f"❌ 샘플 이미지가 없습니다: {IMAGE_PATH}")
+        return
+
+    with open(IMAGE_PATH, "rb") as f:
+        files = {"file": f}
+        resp = requests.post(OCR_URL, files=files)
+
+    if resp.status_code == 200:
+        result = resp.json()
+        print("✅ OCR 결과:")
+        print(f"언어: {result.get('lang')}")
+        print("텍스트:")
+        raw_text = result.get("text", "").strip()
+        cleaned_text = clean_ocr_text(raw_text)
+        normalized_text = normalize_ocr_units(cleaned_text)
+        print(normalized_text)
+    else:
+        print("❌ 오류 발생:", resp.status_code, resp.text)
+
+if __name__ == "__main__":
+    run_ocr()
+
