@@ -1,153 +1,43 @@
 # app/nutrients_dict.py
-# 표준명(국문)을 key로, 별칭 리스트(국문/영문/약어/흔한 표기 변형)를 values로.
-# 필요할 때 얼마든지 항목을 추가/수정해도 됨.
+# 비타민 계열 12종만 포함 (하위 구분 없음, 단일 매칭 전용)
 
 NUTRIENT_SYNONYMS = {
-    "열량": ["열량", "칼로리", "Energy", "kcal", "ENERC"],
-    "수분": ["수분", "Water", "WATER"],
-    "단백질": ["단백질", "Protein", "PROT"],
-    "지방": ["지방", "Fat", "FATCE"],
-    "회분": ["회분", "Ash", "ASH"],
-    "탄수화물": ["탄수화물", "Carbohydrate", "CHOCDF"],
-
-    "당류": ["당류", "Total sugars", "SUGAR", "총당류", "당"],
-    "자당": ["자당", "Sucrose", "SUCS"],
-    "포도당": ["포도당", "Glucose", "GLUS"],
-    "과당": ["과당", "Fructose", "FRUS"],
-    "유당": ["유당", "Lactose", "LACS"],
-    "맥아당": ["맥아당", "Maltose", "MALS"],
-    "갈락토오스": ["갈락토오스", "Galactose", "GALS"],
-
-    "총 식이섬유": ["총 식이섬유", "총식이섬유", "Total dietary fiber", "FIBTG", "식이섬유", "식이섭유"],
-    "수용성 식이섬유": ["수용성 식이섬유", "Water soluble dietary fiber", "FIBSOL"],
-    "불용성 식이섬유": ["불용성 식이섬유", "Water insoluble dietary fiber", "FIBINS"],
-
-    "칼슘": ["칼슘", "Calcium", "CA", "갈숨", "칼숨"],
-    "철": ["철", "Iron", "FE"],
-    "마그네슘": ["마그네슘", "Magnesium", "MG"],
-    "인": ["인", "Phosphorus", "P"],
-    "칼륨": ["칼륨", "Potassium", "K"],
-    "나트륨": ["나트륨", "Sodium", "NA", "나트룸", "나트룹"],
-    "아연": ["아연", "Zinc", "ZN"],
-    "구리": ["구리", "Copper", "CU"],
-    "망간": ["망간", "Manganese", "MN"],
-    "셀레늄": ["셀레늄", "Selenium", "SE"],
-    "몰리브덴": ["몰리브덴", "Molybdenum", "MO"],
-    "요오드": ["요오드", "Iodine", "ID"],
-
-    "비타민 A": ["비타민 A", "Vitamin A", "VITA_RAE", "비타민A"],
-    "레티놀": ["레티놀", "Retinol", "RETOL"],
-    "베타카로틴": ["베타카로틴", "β-Carotene", "Beta-Carotene", "CARTB", "베타 카로틴", "β카로틴"],
-
-    "티아민": ["티아민", "Thiamin", "THIA", "비타민 B1", "비타민B1", "B1"],
-    "리보플라빈": ["리보플라빈", "Riboflavin", "비타민 B2", "비타민B2", "B2"],
-    "니아신": ["니아신", "Niacin", "NIA", "비타민 B3", "비타민B3", "B3"],
-    "니아신당량(NE)": ["니아신당량", "Total niacin equivalents", "NIAEQ", "NE"],
-    "니코틴산": ["니코틴산", "Nicotinic acid"],
-    "니코틴아미드": ["니코틴아미드", "Nicotinamide"],
-    "판토텐산": ["판토텐산", "Pantothenic acid", "PANTAC", "비타민 B5", "비타민B5", "B5"],
-    "비타민 B6": ["비타민 B6", "비타민B6", "Vitamin B6", "VITB6C", "피리독신", "Pyridoxine", "PYRXN"],
-    "비오틴": ["비오틴", "Biotin", "BIOT", "비타민 H", "Vitamin H"],
-    "엽산_엽산당량": ["엽산", "엽산당량", "Folate", "FOLDFE", "엽산(DFE)"],
-    "엽산_식품 엽산": ["식품 엽산", "Food folate", "FOLFD"],
-    "엽산_합성 엽산": ["합성 엽산", "Folic acid", "FOLAC"],
-    "비타민 B12": ["비타민 B12", "비타민B12", "Vitamin B12", "VITB12"],
-
-    "비타민 C": ["비타민 C", "비타민C", "Vitamin C", "VITC", "아스코르빈산"],
-    "비타민 D": ["비타민 D", "비타민D", "Vitamin D", "VITD"],
-    "비타민 D2": ["비타민 D2", "Vitamin D2", "Ergocalciferol", "ERGCAL"],
-    "비타민 D3": ["비타민 D3", "Vitamin D3", "Cholecalciferol", "CHOCAL"],
-    "비타민 E": ["비타민 E", "비타민E", "Vitamin E", "VITE"],
-    "알파 토코페롤": ["알파 토코페롤", "α-Tocopherol", "TOCPHA", "Alpha-Tocopherol"],
-    "베타 토코페롤": ["베타 토코페롤", "β-Tocopherol", "TOCPHB", "Beta-Tocopherol"],
-    "감마 토코페롤": ["감마 토코페롤", "γ-Tocopherol", "TOCPHG", "Gamma-Tocopherol"],
-    "델타 토코페롤": ["델타 토코페롤", "δ-Tocopherol", "TOCPHD", "Delta-Tocopherol"],
-    "알파 토코트리에놀": ["알파 토코트리에놀", "α-Tocotrienol", "TOCTRA"],
-    "베타 토코트리에놀": ["베타 토코트리에놀", "β-Tocotrienol", "TOCTRB"],
-    "감마 토코트리에놀": ["감마 토코트리에놀", "γ-Tocotrienol", "TOCTRG"],
-    "델타 토코트리에놀": ["델타 토코트리에놀", "δ-Tocotrienol", "TOCTRD"],
-    "비타민 K": ["비타민 K", "비타민K", "Vitamin K", "VITK"],
-    "비타민 K1": ["비타민 K1", "비타민K1", "Phylloquinone", "VITK1"],
-    "비타민 K2": ["비타민 K2", "비타민K2", "Menaquinone", "VITK2"],
-
-    "총 아미노산": ["총 아미노산", "Total amino acids"],
-    "총 필수아미노산": ["총 필수아미노산", "Total essential amino acids", "AAE10A"],
-    "이소류신": ["이소류신", "Isoleucine", "ILE"],
-    "류신": ["류신", "Leucine", "LEU"],
-    "라이신": ["라이신", "Lysine", "LYS"],
-    "메티오닌": ["메티오닌", "Methionine", "MET"],
-    "페닐알라닌": ["페닐알라닌", "Phenylalanine", "PHE"],
-    "트레오닌": ["트레오닌", "Threonine", "THR"],
-    "트립토판": ["트립토판", "Tryptophan", "TRP"],
-    "발린": ["발린", "Valine", "VAL"],
-    "히스티딘": ["히스티딘", "Histidine", "HIS"],
-    "아르기닌": ["아르기닌", "Arginine", "ARG"],
-    "티로신": ["티로신", "Tyrosine", "TYR"],
-    "시스테인": ["시스테인", "Cysteine", "CYSTE"],
-    "알라닌": ["알라닌", "Alanine", "ALA"],
-    "아스파르트산": ["아스파르트산", "Aspartic acid", "ASP"],
-    "글루탐산": ["글루탐산", "Glutamic acid", "GLU"],
-    "글라이신": ["글라이신", "Glycine", "GLY"],
-    "프롤린": ["프롤린", "Proline", "PRO"],
-    "세린": ["세린", "Serine", "SER"],
-    "타우린": ["타우린", "Taurine", "TAU"],
-
-    "콜레스테롤": ["콜레스테롤", "Cholesterol", "CHOLE", "콜레스레돌"],
-
-    "총 지방산": ["총 지방산", "Total fatty acids", "FACID"],
-    "총 필수지방산": ["총 필수지방산", "Total essential fatty acids", "FAESS"],
-    "총 포화지방산": ["총 포화지방산", "Total saturated fatty acids", "FASAT"],
-    "총 불포화지방산": ["총 불포화지방산", "Total unsaturated fatty acids"],
-    "총 단일불포화지방산": ["총 단일불포화지방산", "Total monounsaturated fatty acids", "FAMS"],
-    "총 다가불포화지방산": ["총 다가불포화지방산", "Total polyunsaturated fatty acids", "FAPU"],
-    "오메가3 지방산": ["오메가3 지방산", "Total n-3 polyunsaturated fatty acids", "FAPUN3", "오메가 3"],
-    "오메가6 지방산": ["오메가6 지방산", "Total n-6 polyunsaturated fatty acids", "FAPUN6", "오메가 6"],
-    "총 트랜스지방산": ["총 트랜스지방산", "Total trans fatty acids", "FATRN"],
-
-    "부티르산(4:0)": ["부티르산(4:0)", "Butyric acid", "F4D0"],
-    "카프로산(6:0)": ["카프로산(6:0)", "Caproic acid", "F6D0"],
-    "카프릴산(8:0)": ["카프릴산(8:0)", "Caprylic acid", "F8D0"],
-    "카프르산(10:0)": ["카프르산(10:0)", "Capric acid", "F10D0"],
-    "라우르산(12:0)": ["라우르산(12:0)", "Lauric acid", "F12D0"],
-    "트라이데칸산(13:0)": ["트라이데칸산(13:0)", "Tridecanoic acid", "F13D0"],
-    "미리스트산(14:0)": ["미리스트산(14:0)", "Myristic acid", "F14D0"],
-    "펜타데칸산(15:0)": ["펜타데칸산(15:0)", "Pentadecanoic acid", "F15D0"],
-    "팔미트산(16:0)": ["팔미트산(16:0)", "Palmitic acid", "F16D0"],
-    "헵타데칸산(17:0)": ["헵타데칸산(17:0)", "Heptadecanoic acid", "F17D0"],
-    "스테아르산(18:0)": ["스테아르산(18:0)", "Stearic acid", "F18D0"],
-    "아라키드산(20:0)": ["아라키드산(20:0)", "Arachidic acid", "F20D0"],
-    "헨에이코산산(21:0)": ["헨에이코산산(21:0)", "Henicosanoic acid", "F21D0"],
-    "베헨산(22:0)": ["베헨산(22:0)", "Behenic acid", "F22D0"],
-    "트리코산산(23:0)": ["트리코산산(23:0)", "Tricosanoic acid", "F23D0"],
-    "리그노세르산(24:0)": ["리그노세르산(24:0)", "Lignoceric acid", "F24D0"],
-
-    "미리스톨레산(14:1)": ["미리스톨레산(14:1)", "Myristoleic acid", "F14D1"],
-    "팔미톨레산(16:1)": ["팔미톨레산(16:1)", "Palmitoleic acid", "F16D1"],
-    "헵타데센산(17:1)": ["헵타데센산(17:1)", "Heptadecenoic acid", "F17D1"],
-    "올레산(18:1(n-9))": ["올레산(18:1(n-9))", "Oleic acid", "F18D1N9"],
-    "박센산(18:1(n-7))": ["박센산(18:1(n-7))", "Vaccenic acid", "F18D1N7"],
-    "가돌레산(20:1)": ["가돌레산(20:1)", "Gadoleic acid", "F20D1"],
-    "에루크산(22:1)": ["에루크산(22:1)", "Erucic acid", "F22D1"],
-    "네르본산(24:1)": ["네르본산(24:1)", "Nervonic acid", "F24D1"],
-
-    "리놀레산(18:2(n-6))": ["리놀레산(18:2(n-6))", "Linoleic acid", "F18D2N6"],
-    "알파 리놀렌산(18:3 (n-3))": ["알파 리놀렌산(18:3(n-3))", "α-Linolenic acid", "F18D3N3", "Alpha-Linolenic acid"],
-    "감마 리놀렌산(18:3 (n-6))": ["감마 리놀렌산(18:3(n-6))", "γ-Linolenic acid", "F18D3N6", "Gamma-Linolenic acid"],
-    "에이코사디에노산(20:2(n-6))": ["에이코사디에노산(20:2(n-6))", "Eicosadienoic acid", "F20D2N6"],
-    "디호모리놀렌산(20:3(n-3))": ["디호모리놀렌산(20:3(n-3))", "Dihomolinolenic acid", "F20D3N3"],
-    "에이코사트리에노산(20:3(n-6))": ["에이코사트리에노산(20:3(n-6))", "Eicosatrienoic acid", "F20D3N6"],
-    "아라키돈산(20:4(n-6))": ["아라키돈산(20:4(n-6))", "Arachidonic acid", "F20D4N6"],
-    "에이코사펜타에노산(20:5(n-3))": ["에이코사펜타에노산(20:5(n-3))", "Eicosapentaenoic acid", "EPA", "F20D5N3"],
-    "도코사디에노산(22:2)": ["도코사디에노산(22:2)", "Docosadienoic acid", "F22D2"],
-    "도코사펜타에노산(22:5(n-3))": ["도코사펜타에노산(22:5(n-3))", "Docosapentaenoic acid", "DPA", "F22D5N3"],
-    "도코사헥사에노산(22:6(n-3))": ["도코사헥사에노산(22:6(n-3))", "Docosahexaenoic acid", "DHA", "F22D6N3"],
-
-    "트랜스 올레산(18:1(n-9)t)": ["트랜스 올레산(18:1(n-9)t)", "trans-Oleic acids", "F18D1TN9"],
-    "트랜스 리놀레산(18:2t)": ["트랜스 리놀레산(18:2t)", "trans-Linoleic acids", "F18D2TN6"],
-    "트랜스 리놀렌산(18:3t)": ["트랜스 리놀렌산(18:3t)", "trans-Linolenic acids", "F18D3TN3"],
-
-    "식염상당량": ["식염상당량", "Salt equivalent", "NACL_EQ", "소금", "소듐"],
+    "비타민 A": [
+        "비타민 A", "비타민A", "Vitamin A", "A", "레티놀", "Retinol"
+    ],
+    "비타민 D": [
+        "비타민 D", "비타민D", "Vitamin D", "D"
+    ],
+    "비타민 E": [
+        "비타민 E", "비타민E", "Vitamin E", "E"
+    ],
+    "비타민 K": [
+        "비타민 K", "비타민K", "Vitamin K", "K"
+    ],
+    "비타민 C": [
+        "비타민 C", "비타민C", "Vitamin C", "C", "아스코르빈산"
+    ],
+    "비타민 B6": [
+        "비타민 B6", "비타민B6", "Vitamin B6", "B6"
+    ],
+    "비타민 B12": [
+        "비타민 B12", "비타민B12", "Vitamin B12", "B12"
+    ],
+    "티아민": [
+        "티아민", "Thiamin", "비타민 B1", "비타민B1", "B1"
+    ],
+    "리보플라빈": [
+        "리보플라빈", "Riboflavin", "비타민 B2", "비타민B2", "B2"
+    ],
+    "엽산": [
+        "엽산", "Folate", "Folic acid", "DFE"
+    ],
+    "비오틴": [
+        "비오틴", "Biotin", "비타민 H", "Vitamin H"
+    ],
+    "판토텐산": [
+        "판토텐산", "Pantothenic acid", "비타민 B5", "비타민B5", "B5"
+    ],
 }
 
 __all__ = ["NUTRIENT_SYNONYMS"]
-

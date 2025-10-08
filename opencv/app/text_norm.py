@@ -1,5 +1,6 @@
 import re
 from typing import Iterable
+from units_dict import normalize_units_in_text  # 단위 보정은 units 모듈에서 일원화
 
 # 숫자 토큰 내 오인식 보정 맵
 _TRANS_NUM = str.maketrans({
@@ -33,22 +34,6 @@ def normalize_numbers(text: str) -> str:
         fixed_lines.append(" ".join(t.translate(_TRANS_NUM) if token_has_digit(t) else t for t in toks))
     return "\n".join(fixed_lines)
 
-def normalize_units(text: str) -> str:
-    """
-    단위 표기 최소 보정:
-      - 'm 9' / 'm9' / 'm q' → 'mg'
-      - µ/μ/全각% → 통일(µ,μ→'u', ％→%)
-      - 마이크로그램 기호 '㎍' → 'ug'
-    """
-    # mg 오인식 보정
-    text = re.sub(r"(?i)\bm\s*9\b", "mg", text)
-    text = re.sub(r"(?i)\bm\s*q\b", "mg", text)
-
-    # 마이크로/퍼센트 통일
-    text = text.replace("µ", "u").replace("μ", "u").replace("㎍", "ug")
-    text = text.replace("％", "%")
-    return text
-
 def pipeline(text: str, steps: Iterable[str] = ("clean", "num", "unit")) -> str:
     """
     조합형 파이프라인. 필요 단계만 선택 가능.
@@ -60,7 +45,7 @@ def pipeline(text: str, steps: Iterable[str] = ("clean", "num", "unit")) -> str:
         elif s == "num":
             text = normalize_numbers(text)
         elif s == "unit":
-            text = normalize_units(text)
+            text = normalize_units_in_text(text)  # ← 단위 보정 위임
     return text
 
 # ============================
@@ -71,19 +56,15 @@ from constants import NUM_PATTERN
 def nutrition_normalize(text: str) -> str:
     """
     영양성분 파싱에 특화된 추가 정규화:
-      - 전각 퍼센트(％) → %
+      - 전각 퍼센트(％) → %  (units 모듈에서 이미 처리하지만 안전겸)
       - '(수치) 96' → '(수치)%' (예: '26 96' → '26%')
       - 숫자를 포함한 토큰에 한해 O/D→0, i/l/I→1, Z→7, S→5, B→8 치환
     ※ 일반 파이프라인(pipeline)과 조합해 쓰는 것을 권장
     """
     # 일반 파이프라인으로 안전 클린업/숫자/단위 보정
     text = pipeline(text, steps=("clean", "num", "unit"))
-
-    # 전각 % 교정 (safety)
+    # 전각 % 안전 보정 (중복 호출되어도 무해)
     text = text.replace("％", "%")
-
     # '96' → '%' (숫자 토큰 뒤에서만)
-    # 예: "26 96" → "26%"
     text = re.sub(rf"({NUM_PATTERN})\s*96\b", r"\1%", text)
-
     return text
