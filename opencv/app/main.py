@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 import io
 
@@ -9,6 +10,17 @@ from text_norm import nutrition_normalize
 from preprocess import postprocess_text
 
 app = FastAPI(title="Medi_Talk OCR API")
+
+# CORS 설정 (외부 앱에서 API 호출 허용)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://medimedi.p-e.kr:65002",  # 접속주소
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -----------------------------
 # 내부 유틸
