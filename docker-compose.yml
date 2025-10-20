@@ -19,7 +19,7 @@ services:
     build: ./opencv
     container_name: medi-opencv
     ports:
-      - "8000:8000"
+      - "${OPENCV_EXTERNAL_PORT}:${OPENCV_PORT}"
     restart: always
     networks:
       - medi-net
@@ -51,6 +51,25 @@ services:
       - medi-net
     volumes:
       - ./backend/logs:/app/logs
+
+  backend_app:
+    build: ./Backend_app
+    container_name: medi-backend-app
+    ports:
+      - "${APP_EXTERNAL_PORT}:${APP_PORT}"
+    env_file:
+      - ./.env
+    environment:
+      PORT: "4000"
+    depends_on:
+      - db
+      - opencv
+      - backend
+    restart: always
+    networks:
+      - medi-net
+    volumes:
+      - ./Backend_app/logs:/app/logs
 
 networks:
   medi-net:
