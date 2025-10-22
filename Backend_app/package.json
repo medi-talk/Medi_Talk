@@ -1,19 +1,12 @@
 {
-  "name": "backend",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "node app.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "devDependencies": {
+    "@react-native-community/cli": "^20.0.2"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.2",
-    "express": "^5.1.0",
-    "mysql2": "^3.15.0"
+    "@react-native-picker/picker": "^2.11.2",
+    "@react-navigation/native-stack": "^7.3.26",
+    "react-native-background-timer": "^2.4.1",
+    "react-native-screens": "^4.16.0",
+    "react-native-vector-icons": "^10.3.0"
   }
 }

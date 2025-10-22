@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+Frontend/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# IDE / Editor
+.vscode/
+.idea/
+.DS_Store
+
+# Android
+Frontend/android/.gradle/
+Frontend/android/**/build/
+Frontend/android/**/.cxx/
+*.apk
+
+compile_commands.json
+autolinking.json
+problems-report.html
+*.shacd
+
+# 환경변수 파일
+.env
+
+# API 관리 파일
+Frontend/config/apiConfig.ts
